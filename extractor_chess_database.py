@@ -1,9 +1,18 @@
-import bz2
+# # Modificación para bases de datos .bz2
+# # Librerías necesarias para descomprimir.
+# import bz2
+
+# Modificación para bases de datos .zst
+# Librerías necesarias para descomprimir.
+import zstandard as zstd
+import io
+
+# Librerías necesarias para descomprimir.
 import chess.pgn
 import numpy as np
 
 # --- Configuración ---
-filename = "lichess_db_standard_rated_2013-01.pgn.bz2"
+filename = "lichess_db_standard_rated_2023-03.pgn.zst"
 
 # Arrays por casilla para cada tipo de pieza
 piece_counters = {
@@ -46,36 +55,48 @@ distribution_counters = {
 # Contador total de posiciones analizadas
 total_positions = 0
 
+# # Modificación para bases de datos .bz2 (NOTAR TABULACIÓN)
+# # --- Procesamiento ---
+# with bz2.open(filename, mode="rt", encoding="utf-8", errors="replace") as f:
+#     game_iter = iter(lambda: chess.pgn.read_game(f), None)
+
+# Modificación para bases de datos .zst (NOTAR TABULACIÓN)
 # --- Procesamiento ---
-with bz2.open(filename, mode="rt", encoding="utf-8", errors="replace") as f:
-    game_iter = iter(lambda: chess.pgn.read_game(f), None)
+with open(filename, "rb") as fh:
+    dctx = zstd.ZstdDecompressor()
+    # stream_reader devuelve un flujo descomprimido on the fly
+    with dctx.stream_reader(fh) as reader:
+        # lo envolvemos en un TextIOWrapper para que se comporte como texto
+        text_stream = io.TextIOWrapper(reader, encoding="utf-8", errors="replace")
 
-    for i, game in enumerate(game_iter, start=1):
-        board = game.board()
+        game_iter = iter(lambda: chess.pgn.read_game(text_stream), None)
 
-        for move in [None] + list(game.mainline_moves()):
-            if move is not None:
-                board.push(move)
+        for i, game in enumerate(game_iter, start=1):
+            board = game.board()
 
-            total_positions += 1  # nueva posición procesada
+            for move in [None] + list(game.mainline_moves()):
+                if move is not None:
+                    board.push(move)
 
-            # Contar cuántas piezas de cada tipo hay en la posición
-            piece_counts = {p: 0 for p in piece_counters}
+                total_positions += 1  # nueva posición procesada
 
-            for square in chess.SQUARES:
-                piece = board.piece_at(square)
-                if piece in piece_counters:
-                    # Incrementar mapa de piezas en casillas
-                    piece_counters[piece][square] += 1
-                    # Contar cuántas piezas de ese tipo/color hay en la posición
-                    piece_counts[piece] += 1
+                # Contar cuántas piezas de cada tipo hay en la posición
+                piece_counts = {p: 0 for p in piece_counters}
 
-            # Actualizar las distribuciones
-            for piece, count in piece_counts.items():
-                distribution_counters[piece][count] += 1
+                for square in chess.SQUARES:
+                    piece = board.piece_at(square)
+                    if piece in piece_counters:
+                        # Incrementar mapa de piezas en casillas
+                        piece_counters[piece][square] += 1
+                        # Contar cuántas piezas de ese tipo/color hay en la posición
+                        piece_counts[piece] += 1
 
-        if i % 10000 == 0:
-            print(f"Procesadas {i} partidas...")
+                # Actualizar las distribuciones
+                for piece, count in piece_counts.items():
+                    distribution_counters[piece][count] += 1
+
+            if i % 10000 == 0:
+                print(f"Procesadas {i} partidas...")
 
 import csv
 
