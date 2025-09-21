@@ -30,27 +30,27 @@ piece_counters = {
     chess.Piece(chess.PAWN, chess.BLACK): np.zeros(64, dtype=np.int64),
 }
 
-# # Máximos teóricos por tipo (según reglas de promoción)
-# max_pieces = {
-#     chess.Piece(chess.KING, chess.WHITE): 1,
-#     chess.Piece(chess.KING, chess.BLACK): 1,
-#     chess.Piece(chess.QUEEN, chess.WHITE): 9,
-#     chess.Piece(chess.QUEEN, chess.BLACK): 9,
-#     chess.Piece(chess.ROOK, chess.WHITE): 10,
-#     chess.Piece(chess.ROOK, chess.BLACK): 10,
-#     chess.Piece(chess.BISHOP, chess.WHITE): 10,
-#     chess.Piece(chess.BISHOP, chess.BLACK): 10,
-#     chess.Piece(chess.KNIGHT, chess.WHITE): 10,
-#     chess.Piece(chess.KNIGHT, chess.BLACK): 10,
-#     chess.Piece(chess.PAWN, chess.WHITE): 8,
-#     chess.Piece(chess.PAWN, chess.BLACK): 8,
-# }
+# Máximos teóricos por tipo (según reglas de promoción)
+max_pieces = {
+    chess.Piece(chess.KING, chess.WHITE): 1,
+    chess.Piece(chess.KING, chess.BLACK): 1,
+    chess.Piece(chess.QUEEN, chess.WHITE): 9,
+    chess.Piece(chess.QUEEN, chess.BLACK): 9,
+    chess.Piece(chess.ROOK, chess.WHITE): 10,
+    chess.Piece(chess.ROOK, chess.BLACK): 10,
+    chess.Piece(chess.BISHOP, chess.WHITE): 10,
+    chess.Piece(chess.BISHOP, chess.BLACK): 10,
+    chess.Piece(chess.KNIGHT, chess.WHITE): 10,
+    chess.Piece(chess.KNIGHT, chess.BLACK): 10,
+    chess.Piece(chess.PAWN, chess.WHITE): 8,
+    chess.Piece(chess.PAWN, chess.BLACK): 8,
+}
 
 # Distribución de número de piezas (ejemplo: cuántas posiciones tenían 2 damas blancas, etc.)
 distribution_counters = {
-    # piece: np.zeros(max_count + 1, dtype=np.int64)
-    # for piece, max_count in max_pieces.items()
-    piece: np.zeros(11, dtype=np.int64) for piece in piece_counters
+    piece: np.zeros(max_count + 1, dtype=np.int64)
+    for piece, max_count in max_pieces.items()
+    # piece: np.zeros(11, dtype=np.int64) for piece in piece_counters
 }
 
 # Contador total de posiciones analizadas

@@ -4,6 +4,12 @@ import numpy as np
 import chess
 import csv
 
+
+# --- Recuperar total_positions primero ---
+with open("summary.csv", newline="", encoding="utf-8") as f:
+    reader = csv.DictReader(f)
+    total_positions = int(next(reader)["total_positions"])
+
 # --- Recuperar piece_counters ---
 piece_counters = {}
 with open("piece_counters.csv", newline="", encoding="utf-8") as f:
@@ -13,11 +19,17 @@ with open("piece_counters.csv", newline="", encoding="utf-8") as f:
         square_index = int(row["square_index"])
         count = int(row["count"])
 
-        # Convertir símbolo PGN a objeto Piece
         piece = chess.Piece.from_symbol(symbol)
 
         if piece not in piece_counters:
             piece_counters[piece] = np.zeros(64, dtype=np.int64)
+
+        # Ajustes para evitar probabilidades 0 o 1
+        if count == 0:
+            if not (piece.piece_type == chess.PAWN and (square_index // 8 in [0, 7])):
+                count = 1
+        elif count == total_positions:
+            count = total_positions - 1
 
         piece_counters[piece][square_index] = count
 
@@ -33,24 +45,23 @@ with open("distribution_counters.csv", newline="", encoding="utf-8") as f:
         piece = chess.Piece.from_symbol(symbol)
 
         if piece not in distribution_counters:
-            # el tamaño se ajusta dinámicamente al máximo encontrado
             distribution_counters[piece] = []
 
-        # aseguramos que la lista tenga espacio
         arr = distribution_counters[piece]
         while len(arr) <= num_pieces:
             arr.append(0)
 
-        arr[num_pieces] = positions
+        value = positions
+        # Ajuste solo para evitar ceros indebidos
+        if value == 0:
+            if not (piece.piece_type == chess.KING and num_pieces != 1):
+                value = 1
+
+        arr[num_pieces] = value
 
 # Convertimos listas en arrays de numpy
 for piece in distribution_counters:
     distribution_counters[piece] = np.array(distribution_counters[piece], dtype=np.int64)
-
-# --- Recuperar total_positions ---
-with open("summary.csv", newline="", encoding="utf-8") as f:
-    reader = csv.DictReader(f)
-    total_positions = int(next(reader)["total_positions"])
 
 
 # Evita que BytesIO se "cierre" cuando BitOutputStream llame a close()
@@ -66,57 +77,123 @@ class NonClosingBytesIO(io.BytesIO):
         super().close()
 
 
-def encode_chessboard(board, enc, collect_data = False, encoding_data = None):
+def encode_chessboard(board, enc, collect_data=False, encoding_data=None):
     """
-    The input to the neural predictor contains:
-    -> A board representation (a list of length 64 for each piece) of the already compressed or decompressed pieces.
-    -> An equal length input that stores if the state in the board representation is really known.
-    -> A list with the info about the number of pieces already compressed or decompressed.
-    -> An equal lenght input that stores if the number of pieces is really known.
-    A num_piece equal to zero implicates that the current_piece number is still unknown.
-    The output to the neural predictor contains:
-    -> A board representation with the probability of finding a piece in a position.
-    -> A list for each piece with the probability distribution for the number of pieces.
+    Codifica un tablero de ajedrez en un stream con arithmetic coding.
+    Si collect_data=True, también genera ejemplos (input, target) para entrenar la red neuronal.
+
+    Entrada a la red neuronal:
+    - 12*64      : si hay una pieza (piece_index, square)
+    - 12*64      : si el estado de esa casilla es conocido
+    - 12         : número de piezas de cada tipo
+    - 12         : si el número de piezas de ese tipo es conocido
+    Total = 1560
+
+    Salidas de entrenamiento:
+    - ("numero_piezas", piece_index, one_hot[11]) 
+    - ("existencia_pieza", piece_index, square, 0/1)
     """
-    # Storage of assigned squares.
-    is_square_assigned = [False]*64
+
+    # Definimos offsets claros
+    OFFSET_PIECES = 0
+    OFFSET_KNOWN_SQUARES = 12 * 64
+    OFFSET_NUM_PIECES = 12 * 64 * 2
+    OFFSET_KNOWN_NUM = OFFSET_NUM_PIECES + 12
+
+    # Estado de casillas ocupadas
+    is_square_assigned = [False] * 64
+
     if collect_data:
         neural_predictor_input = np.zeros(1560, dtype=np.float32)
-    # Codificación.
-    for piece_index, piece in enumerate(piece_counters.keys()):  # o la lista de piezas que quieras codificar
-        # Codifica la información de una pieza específica (ej. dama blanca).
 
-        # 1. Número de piezas de este tipo en la posición actual
+    # Codificación pieza por pieza
+    for piece_index, piece in enumerate(piece_counters.keys()):
+        # 1. Número de piezas de este tipo
         num_pieces = len(board.pieces(piece.piece_type, piece.color))
 
-        # 2. Distribución de frecuencias (cuántas posiciones tenían 0, 1, 2... piezas)
+        # Distribución histórica
         num_pieces_freqs = distribution_counters[piece]
-        enc.write(arithmeticcoding.SimpleFrequencyTable(num_pieces_freqs), num_pieces)
 
-        # 3. Orden de casillas por frecuencia de aparición (más frecuente primero)
+        # Guardamos datos de entrenamiento: distribución del número de piezas
+        if collect_data:
+            neural_predictor_output = np.zeros(11, dtype=np.float32)
+            neural_predictor_output[num_pieces] = 1.0
+            encoding_data.append((
+                neural_predictor_input.copy(),
+                "numero_piezas",
+                piece_index,
+                neural_predictor_output
+            ))
+        else:
+            enc.write(arithmeticcoding.SimpleFrequencyTable(num_pieces_freqs), num_pieces)
+
+        # Actualizamos input con número de piezas
+        if collect_data:
+            neural_predictor_input[OFFSET_NUM_PIECES + piece_index] = num_pieces
+            neural_predictor_input[OFFSET_KNOWN_NUM + piece_index] = 1.0
+
+        # 2. Orden de casillas por frecuencia
         square_order = np.argsort(-piece_counters[piece])
 
-        # 4. Codificar casilla por casilla
+        # 3. Codificar casillas
         encoded_count = 0
         i = 0
         while encoded_count < num_pieces:
             square = square_order[i]
             if not is_square_assigned[square]:
-                # Frecuencias de aparición y no aparición en esta casilla
+                # Frecuencias de aparición
                 true_count = piece_counters[piece][square]
                 false_count = total_positions - true_count
                 arreglo_falso_verdadero = [false_count, true_count]
-
                 freqs = arithmeticcoding.SimpleFrequencyTable(arreglo_falso_verdadero)
 
                 if board.piece_at(square) == piece:
-                    enc.write(freqs, 1)
+                    # Datos de entrenamiento
+                    if collect_data:
+                        encoding_data.append((
+                            neural_predictor_input.copy(),
+                            "existencia_pieza",
+                            piece_index,
+                            square,
+                            1.0
+                        ))
+
+                    if not collect_data:
+                        enc.write(freqs, 1)
+
                     is_square_assigned[square] = True
                     encoded_count += 1
-                else:
-                    enc.write(freqs, 0)
 
+                    # Actualizamos input: la pieza está en square
+                    if collect_data:
+                        neural_predictor_input[OFFSET_PIECES + piece_index * 64 + square] = 1.0
+                        neural_predictor_input[OFFSET_KNOWN_SQUARES + piece_index * 64 + square] = 1.0
+                        # En la misma casilla no puede haber otra pieza
+                        for k in range(12):
+                            neural_predictor_input[OFFSET_KNOWN_SQUARES + k * 64 + square] = 1.0
+                else:
+                    if collect_data:
+                        encoding_data.append((
+                            neural_predictor_input.copy(),
+                            "existencia_pieza",
+                            piece_index,
+                            square,
+                            0.0
+                        ))
+
+                    if not collect_data:
+                        enc.write(freqs, 0)
+
+                    # Actualizamos input: sabemos que en square NO está esta pieza
+                    if collect_data:
+                        neural_predictor_input[OFFSET_PIECES + piece_index * 64 + square] = 0.0
+                        neural_predictor_input[OFFSET_KNOWN_SQUARES + piece_index * 64 + square] = 1.0
             i += 1
+        
+        # Al terminar de procesar esta pieza, todas sus casillas se consideran conocidas
+        if collect_data:
+            for l in range(64):
+                neural_predictor_input[OFFSET_KNOWN_SQUARES + piece_index * 64 + l] = 1.0
 
 
 def decode_chessboard(dec):
