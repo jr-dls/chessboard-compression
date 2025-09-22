@@ -10,12 +10,12 @@ import datetime
 import os
 
 # --- Configuración ---
-filename = "lichess_db_standard_rated_2013-01.pgn.zst"
+filename = "lichess_db_standard_rated_2023-03.pgn.zst"
 output_dir = "E:/dataset"
 os.makedirs(output_dir, exist_ok=True)
 
 CHUNK_SIZE = 50_000       # Número de tuplas por archivo
-SAVE_PROB = 0.01          # 1/100 probabilidad de guardar cada tupla
+SAVE_PROB = 0.1          # 1/10 probabilidad de guardar cada tupla
 STOP_TIME = datetime.datetime.now().replace(hour=5, minute=0, second=0, microsecond=0)
 if STOP_TIME < datetime.datetime.now():  # si ya pasó, usar mañana
     STOP_TIME += datetime.timedelta(days=1)
