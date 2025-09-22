@@ -337,8 +337,8 @@ def entropy_calculation_of_chessboard(board):
 
     return len(encoded)/10
 
-test_encode_and_decode()
-board = chess.Board("r1b2r1k/4qp1p/p1Nppb1Q/4nP2/1p2P3/2N5/PPP4P/2KR1BR1")
-print("")
-print(f"Número de bits posición: {entropy_calculation_of_chessboard(board):.1f}")
-print(board)
+# test_encode_and_decode()
+# board = chess.Board("r1b2r1k/4qp1p/p1Nppb1Q/4nP2/1p2P3/2N5/PPP4P/2KR1BR1")
+# print("")
+# print(f"Número de bits posición: {entropy_calculation_of_chessboard(board):.1f}")
+# print(board)
