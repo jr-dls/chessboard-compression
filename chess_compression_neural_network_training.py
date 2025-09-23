@@ -64,6 +64,7 @@ class ChessNet(nn.Module):
 
         # Capa oculta
         self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
 
         # Head 1: número de piezas (12 × 11)
         self.fc_num_pieces = nn.Linear(hidden_dim, num_pieces * max_count)
@@ -72,7 +73,8 @@ class ChessNet(nn.Module):
         self.fc_existence = nn.Linear(hidden_dim, num_pieces * num_squares)
 
     def forward(self, x):
-        h = F.relu(self.fc1(x))
+        g = F.relu(self.fc1(x))
+        h = F.relu(self.fc2(g))
 
         # logits (se procesan después en la loss)
         logits_num = self.fc_num_pieces(h)       # (batch, 132)
@@ -101,37 +103,39 @@ class ChessDataset(IterableDataset):
         self.task_filter = task_filter
 
     def parse_file(self, path):
-        """Itera sobre un archivo .npz y genera ejemplos individuales"""
+        """Itera sobre un archivo .npz y genera ejemplos individuales con shuffle dentro de cada archivo"""
         data = np.load(path)
 
         # Numero de piezas
         if self.task_filter in [None, "numero_piezas"]:
-            inputs_num = data["inputs_num"]       # (N1, 1560)
+            inputs_num = data["inputs_num"]              # (N1, 1560)
             piece_indices_num = data["piece_indices_num"]  # (N1,)
-            outputs_num = data["outputs_num"]     # (N1, 11)
+            outputs_num = data["outputs_num"]            # (N1, 11)
 
-            for x, idx, y in zip(inputs_num, piece_indices_num, outputs_num):
+            perm = np.random.permutation(len(inputs_num))  # baraja índices
+            for i in perm:
                 yield {
                     "task": "numero_piezas",
-                    "input": torch.from_numpy(x).float(),
-                    "piece_index": torch.tensor(idx, dtype=torch.long),
-                    "target": torch.tensor(np.argmax(y), dtype=torch.long)  # crossentropy target
+                    "input": torch.from_numpy(inputs_num[i]).float(),
+                    "piece_index": torch.tensor(piece_indices_num[i], dtype=torch.long),
+                    "target": torch.tensor(np.argmax(outputs_num[i]), dtype=torch.long)  # crossentropy target
                 }
 
         # Existencia de pieza
         if self.task_filter in [None, "existencia_pieza"]:
-            inputs_ex = data["inputs_ex"]         # (N2, 1560)
+            inputs_ex = data["inputs_ex"]                # (N2, 1560)
             piece_indices_ex = data["piece_indices_ex"]  # (N2,)
-            squares_ex = data["squares_ex"]       # (N2,)
-            labels_ex = data["labels_ex"]         # (N2,)
+            squares_ex = data["squares_ex"]              # (N2,)
+            labels_ex = data["labels_ex"]                # (N2,)
 
-            for x, idx, sq, lbl in zip(inputs_ex, piece_indices_ex, squares_ex, labels_ex):
+            perm = np.random.permutation(len(inputs_ex))  # baraja índices
+            for i in perm:
                 yield {
                     "task": "existencia_pieza",
-                    "input": torch.from_numpy(x).float(),
-                    "piece_index": torch.tensor(idx, dtype=torch.long),
-                    "square": torch.tensor(sq, dtype=torch.long),
-                    "target": torch.tensor(lbl, dtype=torch.float32)  # BCE target
+                    "input": torch.from_numpy(inputs_ex[i]).float(),
+                    "piece_index": torch.tensor(piece_indices_ex[i], dtype=torch.long),
+                    "square": torch.tensor(squares_ex[i], dtype=torch.long),
+                    "target": torch.tensor(labels_ex[i], dtype=torch.float32)  # BCE target
                 }
 
     def __iter__(self):
@@ -187,6 +191,8 @@ def train(model, dataloader, device, epochs=5, lr=1e-3):
         total_loss, total_batches = 0.0, 0
         total_num, total_ex = 0, 0
 
+        total_loss_last_batches = 0.0
+
         for batch in dataloader:
             optimizer.zero_grad()
             loss = 0.0
@@ -230,10 +236,13 @@ def train(model, dataloader, device, epochs=5, lr=1e-3):
             optimizer.step()
 
             total_loss += loss.item()
+            total_loss_last_batches += loss.item()
             total_batches += 1
 
             if (total_batches % 1000 == 0):
                 print(f"Se ha operado en {total_batches} batches y {64*total_batches} tuplas.")
+                print(f"average loss for batch={total_loss_last_batches/(1000):.4f}")
+                total_loss_last_batches = 0.0
 
         avg_loss = total_loss / max(1, total_batches)
         print(f"Epoch {epoch}: loss={avg_loss:.4f}, num_samples={total_num}, ex_samples={total_ex}")
@@ -249,7 +258,7 @@ if __name__ == "__main__":
     model = ChessNet()
 
     # train(model, loader, device, epochs=10, lr=1e-3)
-    train(model, loader, device, epochs=1, lr=1e-3)
+    train(model, loader, device, epochs=5, lr=1e-3)
 
     # Guardar modelo
-    torch.save(model.state_dict(), "chessnet.pth")
+    torch.save(model.state_dict(), "chessnet_3.pth")
