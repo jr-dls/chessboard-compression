@@ -154,12 +154,22 @@ def game_reader_worker(path, queue: Queue, stop_event: Event, sample_prob=0.01):
 def trainer_loop(queue: Queue, stop_event: Event, device="cpu"):
     torch.set_num_threads(NUM_THREADS)
     device = torch.device(device)
-    model = CompletionNet().to(device)
-    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    # Para entrenar desde cero:
+    # model = CompletionNet().to(device)
+    # Para entrenar desde checkpoint:
+    model = CompletionNet()
+    ckpt = torch.load("C:/Users/IN_CAP02/Documents/ResultadosNN/PrimerEntrenamiento/ckpt_00050000.pth", map_location=device)
+    model.load_state_dict(ckpt)
+    model.to(device)
+
+    # optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    optimizer = optim.Adam(model.parameters(), lr=1e-5)
     criterion = nn.BCEWithLogitsLoss()
 
     buffer_inputs, buffer_targets = [], []
     batch_count, total_seen = 0, 0
+
+    ema_loss = None
 
     while True:
         try:
@@ -205,9 +215,14 @@ def trainer_loop(queue: Queue, stop_event: Event, device="cpu"):
             loss.backward()
             optimizer.step()
 
+            if ema_loss == None:
+                ema_loss = loss.item()
+
+            ema_loss = 0.99 * ema_loss + 0.01 * loss.item()
+
             batch_count += 1
             if batch_count % 100 == 0:
-                print(f"[trainer] batch {batch_count}, loss={loss.item():.6f}, seen={total_seen}")
+                print(f"[trainer] batch {batch_count}, ema loss={ema_loss:.6f}, loss={loss.item():.6f}, seen={total_seen}")
             if batch_count % SAVE_EVERY == 0:
                 path = os.path.join(OUTPUT_DIR, f"ckpt_{batch_count:08d}.pth")
                 torch.save(model.state_dict(), path)

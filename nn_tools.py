@@ -362,7 +362,7 @@ def test_encode_and_decode(model):
 if __name__ == "__main__":
     # load model
     model = CompletionNetCompatible()
-    model.load_state_dict(torch.load("C:/Users/IN_CAP02/Documents/checkpoints/ckpt_00020000.pth", map_location="cpu"))
+    model.load_state_dict(torch.load("C:/Users/IN_CAP02/Documents/checkpoints/ckpt_00010000.pth", map_location="cpu"))
     model.eval()
     test_encode_and_decode(model)
     board = chess.Board("r1b2r1k/4qp1p/p1Nppb1Q/4nP2/1p2P3/2N5/PPP4P/2KR1BR1")
