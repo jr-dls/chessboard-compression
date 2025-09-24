@@ -17,7 +17,7 @@ SAVE_EVERY = 10_000      # guardar cada 10k batches
 BUFFER_SIZE = 10_000     # ejemplos en buffer de shuffle
 NUM_WORKERS = 8          # procesos lectores en paralelo
 NUM_THREADS = 4          # threads internos de Torch
-OUTPUT_DIR = "checkpoints"
+OUTPUT_DIR = "C:/Users/IN_CAP02/Documents/checkpoints"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # =====================
@@ -221,7 +221,7 @@ def trainer_loop(queue: Queue, stop_event: Event, device="cpu"):
 # =====================
 def main():
     set_start_method("spawn", force=True)
-    data_path = "big_chess_db.zst"  # <-- cámbialo a tu archivo
+    data_path = "lichess_db_standard_rated_2023-03.pgn.zst"  # <-- cámbialo a tu archivo
 
     queue = Queue(maxsize=5000)
     stop_event = Event()
