@@ -64,7 +64,7 @@ def create_plot(csv_path : str, output_svg_path: str):
 
     print("Generating plot...")
     plt.style.use('seaborn-v0_8-whitegrid')
-    plt.figure(figsize=(14,7))
+    fig = plt.figure(figsize=(14,7))
 
     plot = sns.lineplot(data=df, x=x_col, y=y_col, markers='o', linestyle='-')
 
