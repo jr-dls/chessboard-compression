@@ -30,6 +30,7 @@ def create_plot(csv_path : str, output_svg_path: str):
     # --- 2. Load Data using Pandas ---
     try:
         df = pd.read_csv(csv_path)
+        print(f"Successfully loaded CSV file with {len(df)} rows")
     except Exception as e:
         print(f"Error reading CSV file: '{e}'")
         sys.exit(1)
@@ -44,6 +45,7 @@ def create_plot(csv_path : str, output_svg_path: str):
         y_col = 'average_complexity'
         plot_title = 'Complejidad media de posición vs. Turno'
         print("Detected 'average_complexity' column for plotting.")
+    
     elif 'complexity' in df.columns:
         y_col = 'complexity'
         # Try to use game index from filename for title
@@ -58,23 +60,30 @@ def create_plot(csv_path : str, output_svg_path: str):
 
     if y_col is None or x_col not in df.columns:
         print(f"Error: CSV file must contain '{x_col}' column and either a 'complexity' or 'average_complexity' column.")
+        print(f"Available columns: {list(df.columns)}")
         sys.exit(1)
     
     # --- 4. Create the Plot using Seaborn ---
 
     print("Generating plot...")
-    plt.style.use('seaborn-v0_8-whitegrid')
+    try:
+        plt.style.use('seaborn-whitegrid')
+    except:
+        try:
+            plt.style.use('ggplot')
+
     fig = plt.figure(figsize=(14,7))
 
-    plot = sns.lineplot(data=df, x=x_col, y=y_col, markers='o', linestyle='-')
+    ax = sns.lineplot(data=df, x=x_col, y=y_col, markers='o', linestyle='-')
 
-    plot.set_title(plot_title, fontsize=16)
-    plot.set_xlabel('Número de Turno', fontsize=12)
-    plot.set_ylabel(y_label, fontsize=12)
+    ax.set_title(plot_title, fontsize=16)
+    ax.set_xlabel('Número de Turno', fontsize=12)
+    ax.set_ylabel(y_label, fontsize=12)
 
     # Try some plot limits to improve visibility
     plt.xlim(left=0)
-    plt.ylim(bottom=df[y_col].min() - 5 if not df[y_col].empty else 0)
+    if not df[y_col].empty:
+        plt.ylim(bottom=df[y_col.min()-5])
 
     # --- 5. Save the Output ---
   
@@ -82,7 +91,7 @@ def create_plot(csv_path : str, output_svg_path: str):
     # print(f"Successfully saved plot to {output_svg_path}")
     # plt.close(fig)
     try:
-    # Get the directory of the output path
+        # Get the directory of the output path
         output_dir = os.path.dirname(output_svg_path)
 
         # If the output path has a directory, and it doesn't exist, create it.
@@ -90,8 +99,16 @@ def create_plot(csv_path : str, output_svg_path: str):
             os.makedirs(output_dir)
             print(f"Created output directory: {output_dir}")
         
-            plt.savefig(output_svg_path, format='svg', bbox_inches='tight')
-            print(f"Successfully save plot to {output_svg_path}")
+        # Wrongly indented in the code
+        plt.savefig(output_svg_path, format='svg', bbox_inches='tight')
+        print(f"Successfully save plot to {output_svg_path}")
+
+        # Check the file was created
+        if os.path.exists(output_svg_path):
+            file_size = os.path.getsize(output_svg_path)
+            print(f"SVG file created successfully (size: {file_size} bytes)")
+        else:
+            print("Warning: SVG file was not created despite no errors")
     except Exception as e:
         print(f"Error saving SVG file: {e}")
         sys.exit(1)
