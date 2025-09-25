@@ -32,13 +32,21 @@ class CompletionNet(nn.Module):
 
         self.fc1 = nn.Linear(self.input_dim, hidden)
         self.fc2 = nn.Linear(hidden, hidden)
-        self.fc3 = nn.Linear(hidden, output_dim)
+        # Para 2 capas ocultas:
+        # self.fc3 = nn.Linear(hidden, output_dim)
+        # Para 3 capas ocultas:
+        self.fc3 = nn.Linear(hidden, hidden)
+        self.fc4 = nn.Linear(hidden, output_dim)
 
     def forward(self, x):
         x = x.view(x.size(0), -1)  # (B, 2*12*64)
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
-        return self.fc3(x)  # logits
+        # Para 2 capas ocultas:
+        # return self.fc3(x)  # logits
+        # Para 3 capas ocultas:
+        x = torch.relu(self.fc3(x))
+        return self.fc4(x)
 
 # =====================
 # Funciones del usuario
@@ -158,7 +166,7 @@ def trainer_loop(queue: Queue, stop_event: Event, device="cpu"):
     # model = CompletionNet().to(device)
     # Para entrenar desde checkpoint:
     model = CompletionNet()
-    ckpt = torch.load("C:/Users/IN_CAP02/Documents/ResultadosNN/PrimerEntrenamiento/ckpt_00050000.pth", map_location=device)
+    ckpt = torch.load("C:/Users/IN_CAP02/Documents/ResultadosNN/TercerEntrenamiento/ckpt_00100000.pth", map_location=device)
     model.load_state_dict(ckpt)
     model.to(device)
 
