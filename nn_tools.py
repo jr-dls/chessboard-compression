@@ -25,10 +25,10 @@ class CompletionNetCompatible(nn.Module):
         self.fc1 = nn.Linear(self.input_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
         # Para 2 capas ocultas:
-        # self.fc3 = nn.Linear(hidden_dim, num_pieces * num_squares)
+        self.fc3 = nn.Linear(hidden_dim, num_pieces * num_squares)
         # Para 3 capas ocultas:
-        self.fc3 = nn.Linear(hidden_dim, hidden_dim)
-        self.fc4 = nn.Linear(hidden_dim, num_pieces * num_squares)
+        # self.fc3 = nn.Linear(hidden_dim, hidden_dim)
+        # self.fc4 = nn.Linear(hidden_dim, num_pieces * num_squares)
 
     def forward(self, x):
         # accept (B, 2, 12, 64) or (B, input_dim)
@@ -37,10 +37,10 @@ class CompletionNetCompatible(nn.Module):
         h = F.relu(self.fc1(x))
         h = F.relu(self.fc2(h))
         # Para 2 capas ocultas:
-        # logits = self.fc3(h)  # (B, 12*64)
+        logits = self.fc3(h)  # (B, 12*64)
         # Para 3 capas ocultas:
-        h = F.relu(self.fc3(h))
-        logits = self.fc4(h)  # (B, 12*64)
+        # h = F.relu(self.fc3(h))
+        # logits = self.fc4(h)  # (B, 12*64)
 
         logits = logits.view(-1, self.num_pieces, self.num_squares)  # (B, 12, 64)
         return logits
@@ -371,9 +371,12 @@ def test_encode_and_decode(model):
 if __name__ == "__main__":
     # load model
     model = CompletionNetCompatible()
-    model.load_state_dict(torch.load("C:/Users/IN_CAP02/Documents/checkpoints/ckpt_00030000.pth", map_location="cpu"))
+    model.load_state_dict(torch.load("C:/Users/IN_CAP02/Documents/checkpoints/ckpt_00020000.pth", map_location="cpu"))
     model.eval()
     test_encode_and_decode(model)
     board = chess.Board("r1b2r1k/4qp1p/p1Nppb1Q/4nP2/1p2P3/2N5/PPP4P/2KR1BR1")
+    print("")
+    print(f"Número de bits posición: {entropy_board(model, board):.1f}")
+    board = chess.Board("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR")
     print("")
     print(f"Número de bits posición: {entropy_board(model, board):.1f}")

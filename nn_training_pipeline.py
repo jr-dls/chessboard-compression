@@ -163,15 +163,15 @@ def trainer_loop(queue: Queue, stop_event: Event, device="cpu"):
     torch.set_num_threads(NUM_THREADS)
     device = torch.device(device)
     # Para entrenar desde cero:
-    model = CompletionNet().to(device)
+    # model = CompletionNet().to(device)
     # Para entrenar desde checkpoint:
-    # model = CompletionNet()
-    # ckpt = torch.load("C:/Users/IN_CAP02/Documents/ResultadosNN/PrimerEntrenamiento/ckpt_00050000.pth", map_location=device)
-    # model.load_state_dict(ckpt)
-    # model.to(device)
+    model = CompletionNet()
+    ckpt = torch.load("C:/Users/IN_CAP02/Documents/ResultadosNN/TercerEntrenamiento/ckpt_00100000.pth", map_location=device)
+    model.load_state_dict(ckpt)
+    model.to(device)
 
-    optimizer = optim.Adam(model.parameters(), lr=1e-4)
-    # optimizer = optim.Adam(model.parameters(), lr=1e-5)
+    # optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    optimizer = optim.Adam(model.parameters(), lr=1e-5)
     criterion = nn.BCEWithLogitsLoss()
 
     buffer_inputs, buffer_targets = [], []
