@@ -114,6 +114,11 @@ def analyze_complexity(pgn_path, output_csv, use_nn=False, model_path=None, game
             for move in game.mainline_moves():
                 board.push(move)
                 half_move += 1
+
+                # When calculating average, cap the analysis at 100 half-moves (pos 0 to 99)
+                if game_index is None and half_move >= 100:
+                    break
+
                 complexity = complexity_function(board.copy())
                 if game_index is not None:
                     single_game_results.append((half_move, complexity))
@@ -124,7 +129,7 @@ def analyze_complexity(pgn_path, output_csv, use_nn=False, model_path=None, game
             if game_index is not None:
                 target_game_found = True
                 print(f"Finished analyzing game {game_index}.")
-                break # Stop after processing the target game
+                break 
 
             if games_processed % 100 == 0:
                 print(f"  ... processed {games_processed} games.")
