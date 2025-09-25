@@ -73,16 +73,27 @@ def create_plot(csv_path : str, output_svg_path: str):
     plot.set_ylabel(y_label, fontsize=12)
 
     # Try some plot limits to improve visibility
-    plt.xlim(left=0)
-    plt.ylim(bottom=df[y_col].min() - 5 if not df[y_col].empty else 0)
+    #plt.xlim(left=0)
+    #plt.ylim(bottom=df[y_col].min() - 5 if not df[y_col].empty else 0)
 
     # --- 5. Save the Output ---
     try:
+        # Get the directory of the output path
+        output_dir = os.path.dirname(output_svg_path)
+
+        # If the output path has a directory, and it doesn't exist, create it.
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            print(f"Created output directory: {output_dir}")
+        
         plt.savefig(output_svg_path, format='svg', bbox_inches='tight')
         print(f"Successfully save plot to {output_svg_path}")
     except Exception as e:
         print(f"Error saving SVG file: {e}")
         sys.exit(1)
+    finally:
+        # Missing.  Ensure the plot is closed to finalise operations
+        plt.close(fig)
     
     #%% ---------------------------------------------------------------------------------
     #   Main program entry
