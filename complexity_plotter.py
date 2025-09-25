@@ -69,8 +69,7 @@ def create_plot(csv_path : str, output_svg_path: str):
     try:
         plt.style.use('seaborn-whitegrid')
     except:
-        try:
-            plt.style.use('ggplot')
+        plt.style.use('ggplot')
 
     fig = plt.figure(figsize=(14,7))
 
