@@ -82,7 +82,7 @@ def create_plot(csv_path : str, output_svg_path: str):
     # Try some plot limits to improve visibility
     plt.xlim(left=0)
     if not df[y_col].empty:
-        plt.ylim(bottom=df[y_col.min()-5])
+        plt.ylim(bottom=df[y_col].min()-5)
 
     # --- 5. Save the Output ---
   
