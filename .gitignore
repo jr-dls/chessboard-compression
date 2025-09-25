@@ -4,3 +4,4 @@ lichess_db_standard_rated_2023-03.pgn.zst
 *.pdf
 *.zst
 chessnet.pth
+test.csv
