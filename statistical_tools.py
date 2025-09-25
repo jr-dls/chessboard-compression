@@ -3,8 +3,6 @@ import io
 import numpy as np
 import chess
 import csv
-import torch
-from chess_compression_neural_network_training import ChessNet
 
 
 # --- Recuperar total_positions primero ---
@@ -78,89 +76,9 @@ class NonClosingBytesIO(io.BytesIO):
         # para cerrar de verdad si lo necesitas
         super().close()
 
-
-def predict_position_counts(model, input_tuple, total_positions=total_positions, device="cpu"):
-    """
-    Args:
-        model: modelo entrenado (ChessNet).
-        input_tuple: 
-            - (neural_predictor_input, "numero_piezas", piece_index) 
-            - (neural_predictor_input, "existencia_pieza", piece_index, square)
-            donde el primer elemento es el input np.array (1560,)
-        total_positions: int, número total de posiciones para escalar resultados.
-        device: str, "cpu" o "cuda"
-    """
-    # unpack
-    neural_predictor_input = input_tuple[0]
-    task = input_tuple[1]
-    piece_index = input_tuple[2]
-
-    model.eval()
-    with torch.no_grad():
-        x = torch.from_numpy(neural_predictor_input).float().unsqueeze(0).to(device)
-        logits_num, logits_ex = model(x)
-
-        if task == "numero_piezas":
-            # seleccionar el bloque del piece_index (shape: (1, 11))
-            selected = logits_num.view(1, -1, 11)[:, piece_index]
-            probs = torch.softmax(selected, dim=-1).cpu().numpy().flatten()
-
-            # escalar por total_positions y redondear
-            counts = np.round(probs * total_positions).astype(int)
-
-            # asegurar que no haya ceros. KISS
-            counts = np.maximum(counts, 1)
-
-            return counts.tolist()
-
-        elif task == "existencia_pieza":
-            square = input_tuple[3]
-            idx = piece_index * 64 + square
-            selected = logits_ex[0, idx]
-            prob = torch.sigmoid(selected).item()
-
-            count = int(round(prob * total_positions))
-
-            # ajustar límites
-            if count <= 0:
-                count = 1
-            elif count >= total_positions:
-                count = total_positions - 1
-
-            return count
-
-        else:
-            raise ValueError(f"Tarea desconocida: {task}")
-
-
-def encode_chessboard(board, enc, collect_data=False, encoding_data=None, model=None):
-    """
-    Codifica un tablero de ajedrez en un stream con arithmetic coding.
-    Si collect_data=True, también genera ejemplos (input, target) para entrenar la red neuronal.
-
-    Entrada a la red neuronal:
-    - 12*64      : si hay una pieza (piece_index, square)
-    - 12*64      : si el estado de esa casilla es conocido
-    - 12         : número de piezas de cada tipo
-    - 12         : si el número de piezas de ese tipo es conocido
-    Total = 1560
-
-    Salidas de entrenamiento:
-    - ("numero_piezas", piece_index, one_hot[11]) 
-    - ("existencia_pieza", piece_index, square, 0/1)
-    """
-
-    # Definimos offsets claros
-    OFFSET_PIECES = 0
-    OFFSET_KNOWN_SQUARES = 12 * 64
-    OFFSET_NUM_PIECES = 12 * 64 * 2
-    OFFSET_KNOWN_NUM = OFFSET_NUM_PIECES + 12
-
+def encode_chessboard(board, enc):
     # Estado de casillas ocupadas
     is_square_assigned = [False] * 64
-
-    if collect_data or model:
-        neural_predictor_input = np.zeros(1560, dtype=np.float32)
 
     # Codificación pieza por pieza
     for piece_index, piece in enumerate(piece_counters.keys()):
@@ -171,24 +89,7 @@ def encode_chessboard(board, enc, collect_data=False, encoding_data=None, model=
         num_pieces_freqs = distribution_counters[piece]
 
         # Guardamos datos de entrenamiento: distribución del número de piezas
-        if collect_data:
-            neural_predictor_output = np.zeros(11, dtype=np.float32)
-            neural_predictor_output[num_pieces] = 1.0
-            encoding_data.append((
-                neural_predictor_input.copy(),
-                "numero_piezas",
-                piece_index,
-                neural_predictor_output
-            ))
-        else:
-            if model:
-                num_pieces_freqs = predict_position_counts(model, (neural_predictor_input.copy(), "numero_piezas", piece_index))
-            enc.write(arithmeticcoding.SimpleFrequencyTable(num_pieces_freqs), num_pieces)
-
-        # Actualizamos input con número de piezas
-        if collect_data or model:
-            neural_predictor_input[OFFSET_NUM_PIECES + piece_index] = num_pieces
-            neural_predictor_input[OFFSET_KNOWN_NUM + piece_index] = 1.0
+        enc.write(arithmeticcoding.SimpleFrequencyTable(num_pieces_freqs), num_pieces)
 
         # 2. Orden de casillas por frecuencia
         square_order = np.argsort(-piece_counters[piece])
@@ -201,75 +102,27 @@ def encode_chessboard(board, enc, collect_data=False, encoding_data=None, model=
             if not is_square_assigned[square]:
                 # Frecuencias de aparición
                 true_count = piece_counters[piece][square]
-                if model:
-                    true_count = predict_position_counts(model, (neural_predictor_input.copy(), "existencia_pieza", piece_index, square))
                 false_count = total_positions - true_count
                 arreglo_falso_verdadero = [false_count, true_count]
                 freqs = arithmeticcoding.SimpleFrequencyTable(arreglo_falso_verdadero)
 
                 if board.piece_at(square) == piece:
-                    # Datos de entrenamiento
-                    if collect_data:
-                        encoding_data.append((
-                            neural_predictor_input.copy(),
-                            "existencia_pieza",
-                            piece_index,
-                            square,
-                            1.0
-                        ))
-
-                    if not collect_data:
-                        enc.write(freqs, 1)
+                    enc.write(freqs, 1)
 
                     is_square_assigned[square] = True
                     encoded_count += 1
 
-                    # Actualizamos input: la pieza está en square
-                    if collect_data or model:
-                        neural_predictor_input[OFFSET_PIECES + piece_index * 64 + square] = 1.0
-                        neural_predictor_input[OFFSET_KNOWN_SQUARES + piece_index * 64 + square] = 1.0
-                        # En la misma casilla no puede haber otra pieza
-                        for k in range(12):
-                            neural_predictor_input[OFFSET_KNOWN_SQUARES + k * 64 + square] = 1.0
                 else:
-                    if collect_data:
-                        encoding_data.append((
-                            neural_predictor_input.copy(),
-                            "existencia_pieza",
-                            piece_index,
-                            square,
-                            0.0
-                        ))
+                    enc.write(freqs, 0)
 
-                    if not collect_data:
-                        enc.write(freqs, 0)
-
-                    # Actualizamos input: sabemos que en square NO está esta pieza
-                    if collect_data or model:
-                        neural_predictor_input[OFFSET_PIECES + piece_index * 64 + square] = 0.0
-                        neural_predictor_input[OFFSET_KNOWN_SQUARES + piece_index * 64 + square] = 1.0
             i += 1
-        
-        # Al terminar de procesar esta pieza, todas sus casillas se consideran conocidas
-        if collect_data:
-            for l in range(64):
-                neural_predictor_input[OFFSET_KNOWN_SQUARES + piece_index * 64 + l] = 1.0
 
 
-def decode_chessboard(dec, model=None):
-    # Definimos offsets claros
-    OFFSET_PIECES = 0
-    OFFSET_KNOWN_SQUARES = 12 * 64
-    OFFSET_NUM_PIECES = 12 * 64 * 2
-    OFFSET_KNOWN_NUM = OFFSET_NUM_PIECES + 12
-
+def decode_chessboard(dec):
     # Chess board decompression result.
     board_result = chess.Board(fen=None)
     # Storage of assigned squares.
     is_square_assigned = [False]*64
-
-    if model:
-        neural_predictor_input = np.zeros(1560, dtype=np.float32)
 
     for piece_index, piece in enumerate(piece_counters.keys()):  # todas las piezas que quieras decodificar
         # Decodifica la información de una pieza específica (ej. dama blanca)
@@ -277,14 +130,7 @@ def decode_chessboard(dec, model=None):
 
         # 1. Leer número de piezas de este tipo en la posición
         num_pieces_freqs = distribution_counters[piece]
-        if model:
-            num_pieces_freqs = predict_position_counts(model, (neural_predictor_input.copy(), "numero_piezas", piece_index))
         number_of_pieces = dec.read(arithmeticcoding.SimpleFrequencyTable(num_pieces_freqs))
-
-        # Actualizamos input con número de piezas
-        if model:
-            neural_predictor_input[OFFSET_NUM_PIECES + piece_index] = number_of_pieces
-            neural_predictor_input[OFFSET_KNOWN_NUM + piece_index] = 1.0
 
         # 2. Orden de casillas por frecuencia de aparición (más frecuente primero)
         square_order = np.argsort(-piece_counters[piece])
@@ -298,8 +144,6 @@ def decode_chessboard(dec, model=None):
             if not is_square_assigned[square]:
                 # Frecuencias de aparición y no aparición
                 true_count = piece_counters[piece][square]
-                if model:
-                    true_count = predict_position_counts(model, (neural_predictor_input.copy(), "existencia_pieza", piece_index, square))
                 false_count = total_positions - true_count
                 arreglo_falso_verdadero = [false_count, true_count]
 
@@ -309,22 +153,12 @@ def decode_chessboard(dec, model=None):
                     board_result.set_piece_at(square, piece)
                     is_square_assigned[square] = True
                     encoded_count += 1
-                    if model:
-                        neural_predictor_input[OFFSET_PIECES + piece_index * 64 + square] = 1.0
-                        neural_predictor_input[OFFSET_KNOWN_SQUARES + piece_index * 64 + square] = 1.0
-                        # En la misma casilla no puede haber otra pieza
-                        for k in range(12):
-                            neural_predictor_input[OFFSET_KNOWN_SQUARES + k * 64 + square] = 1.0
-                else:
-                    if model:
-                        neural_predictor_input[OFFSET_PIECES + piece_index * 64 + square] = 0.0
-                        neural_predictor_input[OFFSET_KNOWN_SQUARES + piece_index * 64 + square] = 1.0
 
             i += 1
     return board_result
 
 
-def test_encode_and_decode(model=None):
+def test_encode_and_decode():
     # Compression of a group of FENs sequentially.
     # FENs form Bratko-Kopec Test:
     BK_Test_FENs_list_input = ["1k1r4/pp1b1R2/3q2pp/4p3/2B5/4Q3/PPP2B2/2K5",
@@ -358,7 +192,7 @@ def test_encode_and_decode(model=None):
     enc = arithmeticcoding.ArithmeticEncoder(32, bitout)
     # Execution of compression.
     for position in BK_Test_FENs_list_input:
-        encode_chessboard(chess.Board(position), enc, model = model)
+        encode_chessboard(chess.Board(position), enc)
     # Finishing compression
     # MUY IMPORTANTE cerrar el bitout para escribir los últimos bits relevantes:
     enc.finish()
@@ -386,7 +220,7 @@ def test_encode_and_decode(model=None):
     # Decoder initialization.
     dec = arithmeticcoding.ArithmeticDecoder(32, bitin)
     for _ in range(len(BK_Test_FENs_list_input)):
-        FENs_salida.append(decode_chessboard(dec, model = model).board_fen())
+        FENs_salida.append(decode_chessboard(dec).board_fen())
     # Clossure of input.
     bitin.close()
 
@@ -402,7 +236,7 @@ def test_encode_and_decode(model=None):
     
     print("------ Prueba de compresión y decompresión ------")
 
-def entropy_calculation_of_chessboard(board, model=None):
+def entropy_calculation_of_chessboard(board):
     """
     The imput to this function is a chess.Board() object that stores a specific position.
     chess.Board() object can be instantiated from a FEN or extracted from a .pgn database.
@@ -416,7 +250,7 @@ def entropy_calculation_of_chessboard(board, model=None):
     enc = arithmeticcoding.ArithmeticEncoder(32, bitout)
     # Execution of compression.
     for _ in range(80):
-        encode_chessboard(board, enc, model=model)
+        encode_chessboard(board, enc)
     # Finishing compression
     # MUY IMPORTANTE cerrar el bitout para escribir los últimos bits relevantes:
     enc.finish()
@@ -427,18 +261,7 @@ def entropy_calculation_of_chessboard(board, model=None):
     return len(encoded)/10
 
 
-# # Cargar modelo de red neuronal.
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# model = ChessNet()
-# model.load_state_dict(torch.load("chessnet.pth", map_location=device))
-# model.to(device)
-# model.eval()
-
-# print(predict_position_counts(model, (np.zeros(1560, dtype=np.float32), "numero_piezas", 0)))
-# print(predict_position_counts(model, (np.zeros(1560, dtype=np.float32), "existencia_pieza", 0, 4)))
-
-# test_encode_and_decode(model)
-# board = chess.Board("r1b2r1k/4qp1p/p1Nppb1Q/4nP2/1p2P3/2N5/PPP4P/2KR1BR1")
-# print("")
-# print(f"Número de bits posición: {entropy_calculation_of_chessboard(board, model):.1f}")
-# print(board)
+test_encode_and_decode()
+board = chess.Board("r1b2r1k/4qp1p/p1Nppb1Q/4nP2/1p2P3/2N5/PPP4P/2KR1BR1")
+print("")
+print(f"Número de bits posición: {entropy_calculation_of_chessboard(board):.1f}")
